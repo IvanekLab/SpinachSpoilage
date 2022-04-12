@@ -1,0 +1,906 @@
+---
+title: "DataAnalysis"
+author: "Sarah I. Murphy"
+output: 
+  html_document:
+      toc: true
+      number_sections: true
+      toc_float: true
+      code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This file contains analysis for logistics, environmental, and microbiological (APC & GN) data. Abbreviations are sometimes used where "E" represents Beijing eCommerce, "L" represents Local grocery store, "GH" represents greenhouse, "P" represents processing facility.
+
+```{r, warning = FALSE, message=FALSE}
+# load packages
+library(readr)
+library(tidyr)
+library(dplyr)
+library(stats)
+library(lme4)
+library(ggplot2)
+library(ggpubr)
+```
+
+# 1. Logistics 
+
+## Timing of spinach supply chain logistics for lots 1, 2, and 3
+```{r}
+# load data
+df_timing <- read_csv("Data/LogisticsTimingData.csv")
+# prep table
+df_timing %>%
+  group_by(lot)%>%
+  spread(lot,date_time)-> TableS1
+
+# clean-up environment
+rm(df_timing) 
+```
+
+## Summary stats of supply chain activity duration
+```{r,warning = FALSE, message=FALSE}
+# load data
+df_activity <-read_csv("Data/LogisticsActivityDurationData.csv") 
+
+# summarize median, minimum, and maximum duration for each activity
+df_activity %>%
+  group_by(Activity) %>%
+  summarize(                
+    median = median(Duration_minutes, na.rm = TRUE) / 60, #convert from minutes to hours by dividing by 60
+    min = min(Duration_minutes, na.rm = TRUE) / 60,
+    max = max(Duration_minutes, na.rm = TRUE) / 60,
+    n = sum(!is.na(Duration_minutes))) -> summary_duration
+
+# how much overlap was there between cold storage for E and L samples?
+df_activity %>%
+  filter(Activity == "PackagedProductForE_ColdStorage" |
+      Activity == "PackagedProductForL_ColdStorage") %>%
+  group_by(Lot) %>%
+  spread(., Activity, Duration_minutes) %>%
+  group_by(Lot) %>%
+  summarize(durationDiff_h = (
+      PackagedProductForE_ColdStorage - PackagedProductForL_ColdStorage)/60
+  ) -> summary_duration_csOverlap
+
+#rename df_activity as Table1a
+Table1_duration <- df_activity
+
+#clean-up environment
+rm(df_activity)
+```
+# 2. Environmental conditions data
+
+## a. Environmental conditions across spinach supply chain activities (dataloggers)
+
+## Summary stats spinach supply chain environmental conditions
+```{r,warning = FALSE, message=FALSE}
+# prep data
+dfl <- read_csv("Data/SupplyChainLoggerData.csv")
+
+# Temperature summary by activity & lot
+dfl %>%
+  filter(is.na(activity)!=TRUE)%>%
+  filter(lot!="L1"|activity!="3_RawProduct_TransitGHtoP")%>%#missing transit start time 
+  group_by(lot, activity) %>%
+  summarize(mean = mean(Temp_C),
+            sd = sd(Temp_C),
+            min = min(Temp_C),
+            quantile_25 = quantile(Temp_C,0.25),
+            median = median(Temp_C),
+            quantile_75 = quantile(Temp_C,0.75),
+            max = max(Temp_C),
+            n_datapoints=n()) ->Table1_Temp
+
+# Relative humidity summary by activity & lot
+dfl %>%
+  filter(is.na(RH_Percent)!=TRUE) %>% #some don't have RH_Percent data
+  filter(is.na(activity)!=TRUE)%>%
+  filter(lot!="L1"|activity!="3_RawProduct_TransitGHtoP")%>%#missing transit start time
+  group_by(lot, activity) %>%
+  summarize(mean = mean(RH_Percent),
+            sd=sd(RH_Percent),
+            min = min(RH_Percent),
+            quantile_25 = quantile(RH_Percent,0.25),
+            median = median(RH_Percent),
+            quantile_75 = quantile(RH_Percent,0.75),
+            max = max(RH_Percent),
+            n_datapoints=n()) -> Table1_RH
+```
+
+## Plot spinach supply chain environmental conditions data over time
+```{r}
+#plot temperature
+t_L1 <- dfl %>%
+  filter(lot=="L1") %>%
+  filter(activity!="3_RawProduct_TransitGHtoP")%>%#missing transit start time
+  ggplot(., aes(x=China_DateTime,y=Temp_C,col=activity))+
+  geom_point(shape=1)+
+  scale_color_manual(values=c("#00BA38", "#00C19F", "#00B9E3",
+                              "#619CFF", "#DB72FB","#FF61C3"))+
+  scale_y_continuous(breaks=seq(-2,15,1),limits=c(-2,15))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-06 12:00:00"),
+                                as.POSIXct("0020-01-10 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-06 09:00:00"),
+                              as.POSIXct("0020-01-10 12:00:00")))+
+  xlab("")+ ylab("Temperature (°C)")+
+  ggtitle("L1")+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 25, vjust = 1.0, hjust = 1.0))
+
+t_L2 <- dfl %>%
+  filter(lot=="L2") %>%
+  ggplot(., aes(x=China_DateTime,y=Temp_C,col=activity))+
+  geom_point(shape=1)+
+  scale_y_continuous(breaks=seq(-2,15,1),limits=c(-2,15))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-07 12:00:00"),
+                                as.POSIXct("0020-01-11 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-07 09:00:00"),
+                              as.POSIXct("0020-01-11 12:00:00")))+
+  xlab("")+ ylab("Temperature (°C)")+
+  ggtitle("L2")+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 25, vjust = 1.0, hjust = 1.0))
+
+t_L3 <- dfl %>%
+  filter(lot=="L3") %>%
+  ggplot(., aes(x=China_DateTime,y=Temp_C,col=activity))+
+  geom_point(shape=1)+
+  scale_y_continuous(breaks=seq(-2,15,1),limits=c(-2,15))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-08 12:00:00"),
+                                as.POSIXct("0020-01-12 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-08 09:00:00"),
+                              as.POSIXct("0020-01-12 12:00:00")))+
+  xlab("")+ 
+  ylab("Temperature (°C)")+
+  ggtitle("L3")+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 25, vjust = 1.0, hjust = 1.0))
+
+#plot rh
+rh_L1 <- dfl %>%
+  filter(lot=="L1") %>%
+  filter(activity!="3_RawProduct_TransitGHtoP")%>%#missing transit start time 
+  filter(RH_Percent!="NA")%>%
+  ggplot(., aes(x=China_DateTime,y=as.numeric(RH_Percent),col=activity))+
+  geom_point(shape=1)+
+  scale_color_manual(values=c( "#00BA38", "#00C19F", "#00B9E3",
+                              "#619CFF", "#DB72FB","#FF61C3"))+
+  scale_y_continuous(limits=c(0,100))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-06 12:00:00"),
+                                as.POSIXct("0020-01-10 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-06 09:00:00"),
+                              as.POSIXct("0020-01-10 12:00:00")))+
+  xlab("")+ 
+  ylab("Relative Humidity (%)")+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 25, vjust = 1.0, hjust = 1.0))
+
+rh_L2 <- dfl %>%
+  filter(lot=="L2") %>%
+  filter(RH_Percent!="NA")%>%
+  ggplot(., aes(x=China_DateTime,y=as.numeric(RH_Percent),col=activity))+
+  geom_point(shape=1)+
+  scale_y_continuous(limits=c(0,100))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-07 12:00:00"),
+                                as.POSIXct("0020-01-11 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-07 09:00:00"),
+                              as.POSIXct("0020-01-11 12:00:00")))+
+  xlab("")+ 
+  ylab("Relative Humidity (%)")+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 25, vjust = 1.0, hjust = 1.0))
+
+rh_L3 <- dfl %>%
+  filter(lot=="L3") %>%
+  filter(RH_Percent!="NA")%>%
+  ggplot(., aes(x=China_DateTime,y=as.numeric(RH_Percent),col=activity))+
+  geom_point(shape=1)+
+  scale_y_continuous(limits=c(0,100))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-08 12:00:00"),
+                                as.POSIXct("0020-01-12 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-08 09:00:00"),
+                              as.POSIXct("0020-01-12 12:00:00")))+
+  xlab("")+ 
+  ylab("Relative Humidity (%)")+
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 25, vjust = 1.0, hjust = 1.0))
+
+# arrange plots
+ggarrange(t_L1, t_L2, t_L3, rh_L1, rh_L2,rh_L3,ncol=3,nrow=2, align="v") -> plot_enviro_supplychain
+
+# clean-up environment
+rm(t_L1, t_L2, t_L3, rh_L1, rh_L2, rh_L3, dfl)
+```
+
+## b. Retail display environmental conditions (datalogger)
+```{r,warning = FALSE, message=FALSE}
+dfr <- read_csv("Data/RetailDisplayLoggerData.csv")
+
+dfr$China_DateTime = as.POSIXct(dfr$China_DateTime, format="%m/%d/%Y %H:%M")
+
+dfr %>% separate(., China_DateTime, c("Date", "Time"), sep = " ", remove=FALSE) -> dfr
+dfr %>% # restrict to when the datalogger was actually in the display case
+  filter(Date!="0020-01-09"|Time>="15:10:00")->dfr
+```
+## Summary stats retail display environmental conditions 
+```{r}
+# summary stats
+dfr %>% summarize(name="Temperature",
+            mean=mean(`Chan 1 - Deg C`),
+            sd=sd(`Chan 1 - Deg C`),
+            median=median(`Chan 1 - Deg C`),
+            quantile_25=quantile(`Chan 1 - Deg C`,0.25),
+            quantile_75=quantile(`Chan 1 - Deg C`,0.75),
+            min=min(`Chan 1 - Deg C`),
+            max=max(`Chan 1 - Deg C`),
+            n=n())->dfr_t
+
+dfr %>% summarize(name="Relative Humidity",
+            mean=mean(`Chan 2 - %RH`),
+            sd=sd(`Chan 2 - %RH`),
+            median=median(`Chan 2 - %RH`),
+            quantile_25=quantile(`Chan 2 - %RH`,0.25),
+            quantile_75=quantile(`Chan 2 - %RH`,0.75),
+            min=min(`Chan 2 - %RH`),
+            max=max(`Chan 2 - %RH`),
+            n=n())->dfr_rh
+
+rbind(dfr_t,dfr_rh)-> summary_enviro_retaildisplay
+
+# clean-up environment
+rm(dfr_t, dfr_rh)
+```
+
+## Plot retail display environmental conditions data over time 
+```{r}
+# plot
+FigureS2_Temp <- ggplot(dfr, aes(x=China_DateTime,y=`Chan 1 - Deg C`))+
+  geom_point(alpha = 0.3)+
+    scale_x_datetime(breaks = seq(as.POSIXct("0020-01-09 12:00:00"),
+                                  as.POSIXct("0020-01-17 12:00:00"), "24 hour"),
+                     date_labels = "%b %d - %H:%M",
+                     limits = c(as.POSIXct("0020-01-09 12:00:00"),
+                                as.POSIXct("0020-01-17 12:00:00")))+
+  xlab("")+
+  ylab(expression(paste("Temperature (",degree,"C )")))+
+  theme(axis.text.x = element_text(size=12),axis.text.y = element_text(size=12),axis.title.y = element_text(size=12),title = element_text(size=14))
+
+FigureS2_RH <- ggplot(dfr, aes(x=China_DateTime,y=`Chan 2 - %RH`))+
+  geom_point(alpha = 0.3)+
+    scale_x_datetime(breaks = seq(as.POSIXct("0020-01-09 12:00:00"),
+                                  as.POSIXct("0020-01-17 12:00:00"), "24 hour"),
+                     date_labels = "%b %d - %H:%M",
+                     limits = c(as.POSIXct("0020-01-09 12:00:00"),
+                                as.POSIXct("0020-01-17 12:00:00")))+
+  xlab("")+
+  ylab("Relative Humidity (%)")+
+  theme(axis.text.x = element_text(size=12),axis.text.y = element_text(size=12),axis.title.y = element_text(size=12),title = element_text(size=14))
+
+ggarrange(FigureS2_Temp,FigureS2_RH,ncol=1,nrow=2) ->FigureS2
+
+# clean-up environment
+rm(dfr,FigureS2_Temp,FigureS2_RH)
+```
+
+## c. Greenhouse environmental conditions (USB micro-station)
+```{r}
+df_enviro <- read_csv("Data/GreenhouseEnvironmentStationData.csv")
+df_enviro %>% separate(., China_DateTime, c("Date", "Time"), sep = " ", remove=FALSE) -> df_enviro
+#remove datapoint from start-up station
+df_enviro %>%
+  filter(Date!="0020-01-05"|Time!="10:51:00") -> df_enviro
+# prep study period subset
+df_enviro %>%
+  filter(Date=="0020-01-05"|Date=="0020-01-06"|Date=="0020-01-07"|Date=="0020-01-08"&Time<="15:12:00")->df_enviro2
+```
+
+## Summary stats greenhouse environmental conditions overall
+```{r}
+df_enviro2 %>% summarize(name="LeafWetness_Percent",
+            mean=mean(LeafWetness_Percent),
+            sd=sd(LeafWetness_Percent),
+            median=median(LeafWetness_Percent),
+            quantile_25=quantile(LeafWetness_Percent,0.25),
+            quantile_75=quantile(LeafWetness_Percent,0.75),
+            min=min(LeafWetness_Percent),
+            max=max(LeafWetness_Percent),
+            n=n())->df_lw
+
+df_enviro2 %>% summarize(name="SolarRadiation_WattsPerSquareMeter",
+            mean=mean(SolarRadiation_WattsPerSquareMeter),
+            sd=sd(SolarRadiation_WattsPerSquareMeter),
+            median=median(SolarRadiation_WattsPerSquareMeter),
+            quantile_25=quantile(SolarRadiation_WattsPerSquareMeter,0.25),
+            quantile_75=quantile(SolarRadiation_WattsPerSquareMeter,0.75),
+            min=min(SolarRadiation_WattsPerSquareMeter),
+            max=max(SolarRadiation_WattsPerSquareMeter),
+            n=n())->df_sr
+
+df_enviro2 %>% summarize(name="Temp_C",
+            mean=mean(Temp_C),
+            sd=sd(Temp_C),
+            median=median(Temp_C),
+            quantile_25=quantile(Temp_C,0.25),
+            quantile_75=quantile(Temp_C,0.75),
+            min=min(Temp_C),
+            max=max(Temp_C),
+            n=n())->df_tc
+
+df_enviro2 %>% summarize(name="RH_Percent",
+            mean=mean(RH_Percent),
+            sd=sd(RH_Percent),
+            median=median(RH_Percent),
+            quantile_25=quantile(RH_Percent,0.25),
+            quantile_75=quantile(RH_Percent,0.75),
+            min=min(RH_Percent),
+            max=max(RH_Percent),
+            n=n())->df_rh
+
+df_enviro2 %>% summarize(name="DewPt_C",
+            mean=mean(DewPt_C),
+            sd=sd(DewPt_C),
+            median=median(DewPt_C),
+            quantile_25=quantile(DewPt_C,0.25),
+            quantile_75=quantile(DewPt_C,0.75),
+            min=min(DewPt_C),
+            max=max(DewPt_C),
+            n=n())->df_dp
+
+rbind(df_lw,df_sr,df_tc,df_rh,df_dp)-> summary_enviro_greenhouse
+
+# clean-up environment
+rm(df_lw,df_sr,df_tc,df_rh,df_dp)
+```
+
+## Summary stats greenhouse environmental conditions by lot
+```{r}
+#subset 24 h prior to L1 (only have data starting at 11:06 due to set-up of station so missing approx 1 h)
+df_enviro2 %>%
+  filter(Date=="0020-01-05"|Date=="0020-01-06"&Time<="10:13:00")->df_enviro2_L1
+df_enviro2_L1$lot <- "L1"
+
+#subset 24 h prior to L2
+df_enviro2 %>%
+  filter(Date=="0020-01-06"&Time>"09:08:00"|Date=="0020-01-07"&Time<="09:08:00")->df_enviro2_L2
+df_enviro2_L2$lot <- "L2"
+
+#subset 24 h prior to L3
+df_enviro2 %>%
+  filter(Date=="0020-01-07"&Time>"09:25:00"|Date=="0020-01-08"&Time<="09:25:00")->df_enviro2_L3
+df_enviro2_L3$lot <- "L3"
+
+df_enviro2byLot<- rbind(df_enviro2_L1,df_enviro2_L2,df_enviro2_L3)
+```
+
+```{r}
+df_enviro2byLot %>% group_by(lot) %>%
+    summarize(name="LeafWetness_Percent",
+            mean=mean(LeafWetness_Percent),
+            sd=sd(LeafWetness_Percent),
+            median=median(LeafWetness_Percent),
+            quantile_25=quantile(LeafWetness_Percent,0.25),
+            quantile_75=quantile(LeafWetness_Percent,0.75),
+            min=min(LeafWetness_Percent),
+            max=max(LeafWetness_Percent),
+            n=n())->df2_lw
+
+df_enviro2byLot %>% group_by(lot) %>%
+  summarize(name="SolarRadiation_WattsPerSquareMeter",
+            mean=mean(SolarRadiation_WattsPerSquareMeter),
+            sd=sd(SolarRadiation_WattsPerSquareMeter),
+            median=median(SolarRadiation_WattsPerSquareMeter),
+            quantile_25=quantile(SolarRadiation_WattsPerSquareMeter,0.25),
+            quantile_75=quantile(SolarRadiation_WattsPerSquareMeter,0.75),
+            min=min(SolarRadiation_WattsPerSquareMeter),
+            max=max(SolarRadiation_WattsPerSquareMeter),
+            n=n())->df2_sr
+
+df_enviro2byLot %>% group_by(lot) %>%
+  summarize(name="Temp_C",
+            mean=mean(Temp_C),
+            sd=sd(Temp_C),
+            median=median(Temp_C),
+            quantile_25=quantile(Temp_C,0.25),
+            quantile_75=quantile(Temp_C,0.75),
+            min=min(Temp_C),
+            max=max(Temp_C),
+            n=n())->df2_tc
+
+df_enviro2byLot %>% group_by(lot) %>%
+  summarize(name="RH_Percent",
+            mean=mean(RH_Percent),
+            sd=sd(RH_Percent),
+            median=median(RH_Percent),
+            quantile_25=quantile(RH_Percent,0.25),
+            quantile_75=quantile(RH_Percent,0.75),
+            min=min(RH_Percent),
+            max=max(RH_Percent),
+            n=n())->df2_rh
+
+df_enviro2byLot %>% group_by(lot) %>%
+  summarize(name="DewPt_C",
+            mean=mean(DewPt_C),
+            sd=sd(DewPt_C),
+            median=median(DewPt_C),
+            quantile_25=quantile(DewPt_C,0.25),
+            quantile_75=quantile(DewPt_C,0.75),
+            min=min(DewPt_C),
+            max=max(DewPt_C),
+            n=n())->df2_dp
+
+rbind(df2_lw,df2_sr,df2_tc,df2_rh,df2_dp)-> Table2
+
+# clean-up environment
+rm(df2_lw,df2_sr,df2_tc,df2_rh,df2_dp,df_enviro2_L1,df_enviro2_L2,df_enviro2_L3,df_enviro2byLot)
+```
+
+## Plot greenhouse environmental conditions data over time
+```{r}
+## plot
+lw <- ggplot(df_enviro2, aes(x=China_DateTime,y=LeafWetness_Percent))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-05 12:00:00"),
+                                as.POSIXct("0020-01-8 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-05 11:00:00"),
+                              as.POSIXct("0020-01-8 16:00:00")))+
+  xlab("")+
+  ylab("Leaf Wetness (%)")+
+  ggtitle("Leaf Wetness ")+
+   annotate("rect",xmin=as.POSIXct("0020-01-06 10:13:00"),
+            xmax=as.POSIXct("0020-01-06 10:53:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:08:00"),
+            xmax=as.POSIXct("0020-01-07 09:25:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:25:00"),
+            xmax=as.POSIXct("0020-01-08 09:47:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:25:00"),
+            xmax=as.POSIXct("0020-01-07 14:19"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:47:00"),
+            xmax=as.POSIXct("0020-01-08 15:11:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+theme(axis.text.x = element_text(size=12),axis.text.y = element_text(size=12),axis.title.y = element_text(size=12),title = element_text(size=14))+
+  geom_point()
+
+sr <- ggplot(df_enviro2, aes(x=China_DateTime,y=SolarRadiation_WattsPerSquareMeter))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-05 12:00:00"),
+                                as.POSIXct("0020-01-8 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-05 11:00:00"),
+                              as.POSIXct("0020-01-8 16:00:00")))+
+  xlab("")+
+  ylab(expression(paste("Solar Radiation (watts/",m^2,")")))+
+  ggtitle("Solar Radiation")+
+   annotate("rect",xmin=as.POSIXct("0020-01-06 10:13:00"),
+            xmax=as.POSIXct("0020-01-06 10:53:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:08:00"),
+            xmax=as.POSIXct("0020-01-07 09:25:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:25:00"),
+            xmax=as.POSIXct("0020-01-08 09:47:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:25:00"),
+            xmax=as.POSIXct("0020-01-07 14:19"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:47:00"),
+            xmax=as.POSIXct("0020-01-08 15:11:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+theme(axis.text.x = element_text(size=12),axis.text.y = element_text(size=12),axis.title.y = element_text(size=12),title = element_text(size=14))+
+  geom_point()
+
+tc <- ggplot(df_enviro2, aes(x=China_DateTime,y=Temp_C))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-05 12:00:00"),
+                                as.POSIXct("0020-01-8 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-05 11:00:00"),
+                              as.POSIXct("0020-01-8 16:00:00")))+
+  xlab("")+
+  ylab(expression(paste("Temperature (",degree,"C )")))+
+  ggtitle("Temperature")+
+   annotate("rect",xmin=as.POSIXct("0020-01-06 10:13:00"),
+            xmax=as.POSIXct("0020-01-06 10:53:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:08:00"),
+            xmax=as.POSIXct("0020-01-07 09:25:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:25:00"),
+            xmax=as.POSIXct("0020-01-08 09:47:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:25:00"),
+            xmax=as.POSIXct("0020-01-07 14:19"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:47:00"),
+            xmax=as.POSIXct("0020-01-08 15:11:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+theme(axis.text.x = element_text(size=12),axis.text.y = element_text(size=12),axis.title.y = element_text(size=12),title = element_text(size=14))+
+  geom_point()
+
+rh <- ggplot(df_enviro2, aes(x=China_DateTime,y=RH_Percent))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-05 12:00:00"),
+                                as.POSIXct("0020-01-8 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-05 11:00:00"),
+                              as.POSIXct("0020-01-8 16:00:00")))+
+  xlab("")+
+  ylab("Relative Humidity (%)")+
+  ggtitle("Relative Humidity")+
+   annotate("rect",xmin=as.POSIXct("0020-01-06 10:13:00"),
+            xmax=as.POSIXct("0020-01-06 10:53:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:08:00"),
+            xmax=as.POSIXct("0020-01-07 09:25:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:25:00"),
+            xmax=as.POSIXct("0020-01-08 09:47:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:25:00"),
+            xmax=as.POSIXct("0020-01-07 14:19"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:47:00"),
+            xmax=as.POSIXct("0020-01-08 15:11:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+theme(axis.text.x = element_text(size=12),axis.text.y = element_text(size=12),axis.title.y = element_text(size=12),title = element_text(size=14))+
+  geom_point()
+
+dp <- ggplot(df_enviro2, aes(x=China_DateTime,y=DewPt_C))+
+  scale_x_datetime(breaks = seq(as.POSIXct("0020-01-05 12:00:00"),
+                                as.POSIXct("0020-01-8 12:00:00"), "24 hour"),
+                   date_labels = "%b %d - %H:%M",
+                   limits = c(as.POSIXct("0020-01-05 11:00:00"),
+                              as.POSIXct("0020-01-8 16:00:00")))+
+  xlab("")+
+  ylab(expression(paste("Dew Point (",degree,"C )")))+
+  ggtitle("Dew Point")+
+   annotate("rect",xmin=as.POSIXct("0020-01-06 10:13:00"),
+            xmax=as.POSIXct("0020-01-06 10:53:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:08:00"),
+            xmax=as.POSIXct("0020-01-07 09:25:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:25:00"),
+            xmax=as.POSIXct("0020-01-08 09:47:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#F8766D")+
+   annotate("rect",xmin=as.POSIXct("0020-01-07 09:25:00"),
+            xmax=as.POSIXct("0020-01-07 14:19"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+   annotate("rect",xmin=as.POSIXct("0020-01-08 09:47:00"),
+            xmax=as.POSIXct("0020-01-08 15:11:00"),
+            ymin=-Inf,ymax=Inf, alpha=0.3, fill="#00BFC4")+
+theme(axis.text.x = element_text(size=12),axis.text.y = element_text(size=12),axis.title.y = element_text(size=12),title = element_text(size=14))+
+  geom_point()
+
+# arrange plots
+ggarrange(lw,sr,tc,rh,dp, ncol=1,nrow=5,align = "v") -> FigureS1
+
+#clean-up environment
+rm(df_enviro,df_enviro2,dp,lw,rh,sr,tc)
+
+```
+
+# 3. Supply chain studies
+
+## Plot bacteria counts by stage and lot
+```{r, warning=FALSE}
+df_micro_supplychain <- read_csv("Data/SupplyChainMicroData.csv")
+
+df_micro_supplychain$Lot <- as.factor(df_micro_supplychain$Lot)
+# prep data for plots (spell out stage and test levels in full & capitalize lot)
+df_micro_supplychain$Stage <- factor(df_micro_supplychain$stage, 
+                                     levels=c("H", "T", "P","D0","R","DI"), 
+                                     labels=c("Harvest", 
+                                              "Transit", 
+                                              "Pre-packaging",
+                                               "Packaging",
+                                              "Local retail", 
+                                              "Beijing delivery"))
+df_micro_supplychain$Test <- factor(df_micro_supplychain$test, 
+                                    levels=c("APC", "GN"), 
+                                    labels=c("Aerobic plate count", 
+                                             "Total Gram-negative count"))
+
+# plot counts by lot and stage
+ggplot(df_micro_supplychain, aes(x=Lot,y=log10count,col=Test))+
+  geom_point(shape=1)+
+  scale_y_continuous(limits=c(5,8),breaks = seq(5,8,1))+
+  ylab(expression(paste("Bacteria levels (",log[10]," CFU/g)")))+
+  xlab("Lot")+
+  facet_grid(.~Stage)+ theme(legend.position = "none") -> FigureS3
+```
+
+## Kruskal-Wallis tests for rank by lot
+```{r}
+# prep data
+df_micro_supplychain %>%
+  filter(test=="APC") -> df_APC_sc
+df_micro_supplychain %>%
+    filter(test=="GN") -> df_GN_sc
+
+# run Kruskal-Wallis for each stage and test
+lapply(split(df_APC_sc, df_APC_sc$Stage), 
+       function(d) { kruskal.test(log10count ~ Lot, data=d) })# all P >0.05
+
+lapply(split(df_GN_sc, df_GN_sc$Stage), 
+       function(d) { kruskal.test(log10count ~ Lot, data=d) }) # all P >0.05
+
+# don't run post-hoc Dunn's test because K-W showed P>0.05 for all stages
+```
+
+## Summary stats
+```{r}
+# Summarize data for 9 samples from supply chain studies 
+#(combining the 3 lots based on finding above)
+df_micro_supplychain %>%
+  group_by(test,Stage)%>%
+  summarize(mean=mean(log10count),
+            sd=sd(log10count),
+            median=median(log10count),
+            quantile_25=quantile(log10count,0.25),
+            quantile_75=quantile(log10count,0.75),
+            min=min(log10count),
+            max=max(log10count),
+            n=n()) -> TableS2
+```
+
+## Kruskal-Wallis tests for rank by stage (sep for APC & GN)
+```{r}
+# run Kruskal-Wallis test
+kruskal.test(log10count ~ Stage, data=df_APC_sc) #P > 0.05
+
+kruskal.test(log10count ~ Stage, data=df_GN_sc) #P > 0.05
+
+# don't run post-hoc Dunn's test because K-W showed P>0.05 
+```
+
+## Plot bacteria counts by sample_rep for harvest & packaging
+```{r}
+## data prep
+# make sure sample_rep is an unordered factor
+df_micro_supplychain$sample_rep <- 
+  factor(df_micro_supplychain$sample_rep, ordered=FALSE)
+
+# harvest
+df_APC_sc %>%
+  filter(stage=="H")-> df_APC_sc_H
+df_GN_sc %>%
+  filter(stage=="H")-> df_GN_sc_H
+
+# packaging
+df_APC_sc %>%
+  filter(stage=="D0")-> df_APC_sc_D0
+df_GN_sc %>%
+  filter(stage=="D0")-> df_GN_sc_D0
+
+## plot
+# harvest
+h_apc <- ggplot(data=df_APC_sc_H, aes(x=sample_rep, y=log10count, col=Lot))+
+  geom_point()+
+  ylab(expression(paste("Aerobic plate count (",log[10]," CFU/g)")))+
+  xlab("Replicate")+
+  facet_grid(.~Stage)
+h_gn <- ggplot(data=df_GN_sc_H, aes(x=sample_rep, y=log10count, col=Lot))+
+  geom_point()+
+  ylab(expression(paste("Total Gram-negative count (",log[10]," CFU/g)")))+
+  xlab("Replicate")+
+  facet_grid(.~Stage)
+
+# packaging
+d0_apc<- ggplot(data=df_APC_sc_D0, aes(x=sample_rep, y=log10count, col=Lot))+
+  geom_point()+
+  ylab(expression(paste("Aerobic plate count (",log[10]," CFU/g)")))+
+  xlab("Replicate")+
+  facet_grid(.~Stage)
+d0_gn <- ggplot(data=df_GN_sc_D0, aes(x=sample_rep, y=log10count, col=Lot))+
+  geom_point()+
+  ylab(expression(paste("Total Gram-negative count (",log[10]," CFU/g)")))+
+  xlab("Replicate")+
+  facet_grid(.~Stage)
+
+# arrange plots
+ggarrange(h_apc,h_gn,d0_apc,d0_gn, ncol=2,nrow=2,common.legend = TRUE) -> FigureS4
+
+# clean-up environment
+rm(h_apc,h_gn,d0_apc,d0_gn)
+```
+
+## Kruskal-Wallis tests for rank by sample_rep
+```{r}
+## run Kruskal-Wallis rank by sample_rep
+# harvest
+kruskal.test(log10count ~ sample_rep, data=df_APC_sc_H) # marginally significant (P=0.066)
+kruskal.test(log10count ~ sample_rep, data=df_GN_sc_H) # marginally significant (P=0.066)
+
+# packaging
+kruskal.test(log10count ~ sample_rep, data=df_APC_sc_D0) # P = 0.875 so don't perform post-hoc Dunn's test
+kruskal.test(log10count ~ sample_rep, data=df_GN_sc_D0) # P = 0.957 so don't perform post-hoc Dunn's test
+```
+
+## Clean-up environment 
+```{r}
+# clean-up environment
+rm(df_APC_sc, df_APC_sc_D0, df_APC_sc_H, df_GN_sc, df_GN_sc_D0, df_GN_sc_H)
+rm(df_micro_supplychain)
+```
+
+# 4. Shelf life studies
+
+## Data visualization by day, lot, location, and test
+```{r}
+#load data
+df_micro_shelflife <- read_csv("Data/ShelfLifeMicroData.csv")
+
+## Plot means over time for L shelf life samples
+# prep data
+df_micro_shelflife$Test <- df_micro_shelflife$test
+df_micro_shelflife_L <- df_micro_shelflife %>%filter(location=="L")
+
+# plot
+df_micro_shelflife_L %>%
+  filter(sl_day!=4|lot!="L2")%>% # exclude data from sl_day 4 for L2 for L for preparing means/lines for figure since 1 datapoint & apparent outlier
+  group_by(sl_day,lot,Test)%>%
+   summarize(mean_LOG10N=mean(log10count),median_LOG10N=median(log10count)) %>%
+  ggplot(aes(x=sl_day,y=mean_LOG10N, group=Test))+
+    geom_point(shape=19)+
+    geom_point(data=df_micro_shelflife_L, aes(x=sl_day,y=log10count, col=Test), shape=1)+
+    geom_line(aes(linetype=Test))+
+    #geom_line()+
+    #geom_line(aes(x=sl_day,y=median_LOG10N),linetype="dashed")+
+    ylim(5,8)+scale_x_continuous(limits=c(0,10),breaks = seq(0,10,2))+scale_shape_manual(values=c(0,1))+
+    xlab("Day postprocessing")+ ylab(expression(paste("Bacteria levels (",log[10]," CFU/g)")))+
+    ggtitle("Local grocery")+theme(legend.position = "none")+facet_grid(.~lot) -> p_SL_L
+
+## Plot means over time for E shelf life samples
+# prep data
+temp <- df_micro_shelflife %>% filter(sl_day==0)
+temp$location <- "E"
+df_micro_shelflife2 <- rbind(temp, df_micro_shelflife)
+df_micro_shelflife_E <- df_micro_shelflife2 %>%  filter(location=="E")
+
+# plot
+df_micro_shelflife2 %>%
+  filter(location=="E")%>%
+  group_by(sl_day,lot,Test)%>%
+   summarize(mean_LOG10N=mean(log10count),median_LOG10N=median(log10count)) %>%
+  ggplot(aes(x=sl_day,y=mean_LOG10N, group=Test))+
+    geom_point(shape=19)+
+    geom_point(data=df_micro_shelflife_E, aes(x=sl_day,y=log10count, col=Test), shape=1)+
+     geom_line(aes(linetype=Test))+
+    #geom_line()+
+    #geom_line(aes(x=sl_day,y=median_LOG10N),linetype="dashed")+
+    ylim(5,8)+scale_x_continuous(limits=c(0,10),breaks = seq(0,10,2))+scale_shape_manual(values=c(0,1))+
+    xlab("Day postprocessing")+ ylab(expression(paste("Bacteria levels (",log[10]," CFU/g)")))+
+    ggtitle("eCommerce")+theme(legend.position = "none")+facet_grid(.~lot) -> p_SL_E
+
+## arrange the 2 plots
+ggarrange(p_SL_L,p_SL_E, nrow=2) -> Figure2
+
+# clean-up environment
+rm(temp,df_micro_shelflife2,p_SL_L,p_SL_E,df_micro_shelflife_E,df_micro_shelflife_L)
+```
+
+## Summary stats; Table 7
+```{r}
+# Summarize data for samples by lot from shelf life studies
+TableS3 <- df_micro_shelflife %>%
+  group_by(test,sl_day, location, lot) %>%
+  summarize(mean=mean(log10count),
+            min=min(log10count),
+            max=max(log10count),
+            n=n())
+```
+
+## Estimate growth rates for each location/test/lot & summarize
+```{r}
+#first, reviewed plots to determine:
+# min mean is end of "lag phase"/start of "exponential phase" for L is 2 for all; "lag" for E is 4 for all
+# max mean is end of "exponential phase"; day 6 for all L; day 8 for L1 and L3 E and day 6 for L2 E
+#these ended up informing subset of "exponential phase"
+
+# prep data for L (APC and GN); days 2 to 6
+df_SL_L1_APC_L <- df_micro_shelflife %>% 
+  filter(location=="L"&test=="APC"&lot=="L1")%>%
+  filter(sl_day!=10&sl_day!=8&sl_day!=0)
+
+df_SL_L2_APC_L <- df_micro_shelflife %>% 
+  filter(location=="L"&test=="APC"&lot=="L2")%>%
+  filter(sl_day!=10&sl_day!=8&sl_day!=0&sl_day!=4)# remove sl_day 4 outlier
+
+df_SL_L3_APC_L <- df_micro_shelflife %>% 
+  filter(location=="L"&test=="APC"&lot=="L3")%>%
+  filter(sl_day!=10&sl_day!=8&sl_day!=0)
+
+df_SL_L1_GN_L <- df_micro_shelflife %>% 
+  filter(location=="L"&test=="GN"&lot=="L1")%>%
+  filter(sl_day!=10&sl_day!=8&sl_day!=0)
+
+df_SL_L2_GN_L <- df_micro_shelflife %>% 
+  filter(location=="L"&test=="GN"&lot=="L2")%>%
+  filter(sl_day!=10&sl_day!=8&sl_day!=0&sl_day!=4)# remove sl_day 4 outlier
+
+df_SL_L3_GN_L <- df_micro_shelflife %>% 
+  filter(location=="L"&test=="GN"&lot=="L3")%>%
+  filter(sl_day!=10&sl_day!=8&sl_day!=0)
+
+# prep data for E (APC and GN); days 4 to 8
+df_SL_L1_APC_E <- df_micro_shelflife %>% 
+  filter(location=="E"&test=="APC"&lot=="L1")%>%
+  filter(sl_day!=10&sl_day!=3&sl_day!=0)
+
+df_SL_L2_APC_E <- df_micro_shelflife %>%
+  filter(location=="E"&test=="APC"&lot=="L2")%>%
+  filter(sl_day!=10&sl_day!=3&sl_day!=0&sl_day!=8)# remove sl_day 8 outlier
+
+df_SL_L3_APC_E <- df_micro_shelflife %>% 
+  filter(location=="E"&test=="APC"&lot=="L3")%>%
+  filter(sl_day!=10&sl_day!=3&sl_day!=0)
+
+df_SL_L1_GN_E <- df_micro_shelflife %>% 
+  filter(location=="E"&test=="GN"&lot=="L1")%>%
+  filter(sl_day!=10&sl_day!=3&sl_day!=0)
+
+df_SL_L2_GN_E <- df_micro_shelflife %>% 
+  filter(location=="E"&test=="GN"&lot=="L2")%>%
+  filter(sl_day!=10&sl_day!=3&sl_day!=0&sl_day!=8)# remove sl_day 8 outlier
+
+df_SL_L3_GN_E <- df_micro_shelflife %>% 
+  filter(location=="E"&test=="GN"&lot=="L3")%>%
+  filter(sl_day!=10&sl_day!=3&sl_day!=0)
+
+# determine estimated/approximate growth rate (in "exponential phase") for each unique lot/test/location 
+rbind(df_SL_L1_APC_L[c(1:5,7:8)],df_SL_L2_APC_L[c(1:5,7:8)], df_SL_L3_APC_L[c(1:5,7:8)],
+      df_SL_L1_GN_L[c(1:5,7:8)],df_SL_L2_GN_L[c(1:5,7:8)], df_SL_L3_GN_L[c(1:5,7:8)],
+      df_SL_L1_APC_E[c(1:5,7:8)],df_SL_L2_APC_E[c(1:5,7:8)], df_SL_L3_APC_E[c(1:5,7:8)],
+      df_SL_L1_GN_E[c(1:5,7:8)],df_SL_L2_GN_E[c(1:5,7:8)], df_SL_L3_GN_E[c(1:5,7:8)])-> temp
+
+temp2 <- temp %>%
+  group_by(test,sl_day, location, lot) %>%
+  summarize(mean=mean(log10count))
+
+gr.df <- temp2 %>%
+  group_by(test,location, lot) %>%
+  summarize(min=min(mean),
+            max=max(mean),
+            diff=max-min)
+gr.df$d <- 4
+gr.df$d[gr.df$location == "E"&gr.df$lot=="L2"]<-2
+gr.df$gr <- gr.df$diff/gr.df$d
+
+gr.df %>%
+  group_by(test, location)%>%
+  summarize(mean_growthrate=mean(gr),
+            min_growthrate=min(gr),
+            max_growthrate=max(gr))-> tbl_growthrates
+# clean-up environment
+rm(df_SL_L1_APC_L,df_SL_L2_APC_L,df_SL_L3_APC_L,df_SL_L1_GN_L,df_SL_L2_GN_L,df_SL_L3_GN_L,
+   df_SL_L1_APC_E,df_SL_L2_APC_E,df_SL_L3_APC_E,df_SL_L1_GN_E,df_SL_L2_GN_E,df_SL_L3_GN_E)
+rm(temp,temp2,df_micro_shelflife)
+```
+
+## Determine if growth rates differ by site and bacteria
+```{r}
+# fit linear regression model with data from above to determine whether growth rates differ by site and bacteria
+gr.df$location <- factor(gr.df$location, levels = c("L","E"))
+
+lm(gr ~ location, data=gr.df) -> gr.m1 # P < 0.05
+summary(gr.m1)
+
+lm(gr ~ test, data=gr.df) -> gr.m2 # P > 0.05
+summary(gr.m2)
+
+# final model is gr.m1 (Table3)
+plot(gr.m1)
+```
+
+

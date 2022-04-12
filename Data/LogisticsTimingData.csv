@@ -1,0 +1,39 @@
+lot,activity,date_time
+L1,raw product harvest start,1/6/2020 10:13
+L1,raw product harvest end,1/6/2020 10:53
+L1,raw product transit from greenhouse to processing facility end/raw product storage in cooler start,1/6/2020 14:08
+L1,raw product storage in cooler end,1/7/2020 10:05
+L1,product packaging start,1/7/2020 10:10
+L1,product packaging end/packaged product storage in cooler start,1/7/2020 11:21
+L1,packaged product leave cooler for transit to local grocery store,1/7/2020 14:19
+L1,packaged product arrive at local grocery store,1/7/2020 15:01
+L1,packaged product leave local grocery store for transit to processing facility lab,1/7/2020 15:01
+L1,packaged product leave cooler for transit to Beijing lab/packaged product leave processing facility for transit to Beijing lab,1/7/2020 16:00
+L1,packaged product arrive at processing facility lab from local grocery store,1/7/2020 16:09
+L1,packaged product arrive at Beijing lab from processing facility,1/10/2020 10:50
+L2,raw product harvest start,1/7/2020 9:08
+L2,raw product harvest end,1/7/2020 9:25
+L2,raw product transit from greenhouse to processing facility start,1/7/2020 14:19
+L2,raw product transit from greenhouse to processing facility end/raw product storage in cooler start,1/7/2020 15:45
+L2,raw product storage in cooler end,1/8/2020 11:05
+L2,product packaging start,1/8/2020 11:17
+L2,product packaging end/packaged product storage in cooler start,1/8/2020 12:13
+L2,packaged product leave cooler for transit to local grocery store,1/8/2020 13:59
+L2,packaged product arrive at local grocery store,1/8/2020 15:08
+L2,packaged product leave local grocery store for transit to processing facility lab,1/8/2020 15:14
+L2,packaged product arrive at processing facility lab from local grocery store,1/8/2020 15:54
+L2,packaged product leave cooler for transit to Beijing lab/packaged product leave processing facility for transit to Beijing lab,1/8/2020 16:15
+L2,packaged product arrive at Beijing lab from processing facility,1/11/2020 11:00
+L3,raw product harvest start,1/8/2020 9:25
+L3,raw product harvest end,1/8/2020 9:47
+L3,raw product transit from greenhouse to processing facility start,1/8/2020 15:11
+L3,raw product transit from greenhouse to processing facility end/raw product storage in cooler start,1/8/2020 16:53
+L3,raw product storage in cooler end,1/9/2020 9:50
+L3,product packaging start,1/9/2020 9:52
+L3,product packaging end/packaged product storage in cooler start,1/9/2020 11:07
+L3,packaged product leave cooler for transit to local grocery store,1/9/2020 14:12
+L3,packaged product arrive at local grocery store,1/9/2020 15:05
+L3,packaged product leave local grocery store for transit to processing facility lab,1/9/2020 15:10
+L3,packaged product leave cooler for transit to Beijing lab/packaged product leave processing facility for transit to Beijing lab,1/9/2020 15:26
+L3,packaged product arrive at processing facility lab from local grocery store,1/9/2020 16:05
+L3,packaged product arrive at Beijing lab from processing facility,1/12/2020 11:12
