@@ -1,0 +1,239 @@
+---
+title: "Genera_Level_Population_Analysis"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Import Packages
+```{r}
+library("vegan")
+library("calibrate")
+library("dplyr")
+library("tidyverse")
+```
+Hypotheses: 
+1. Populations differ significantly by test (APC, GN)
+2. Populations differ significantly by sampling (S1, S2, S3) 
+3. Populations differ significantly by day of isolate collection (D0, D3, D10)
+
+Aim: 
+1. Check whether it is appropriate to use a Chi-squared test, using the coarsest division of the data (by test) (i.e., whether more than 20% of the cells have an expected value greater than 5)
+2. If chi-squared tests are not appropriate, check whether it is okay to use a Fisher's exact test with the simulate.p.value function for tables larger than 2x2
+3. Use Kruskal-Wallis tests, with species richness 
+
+Guide to dfs:
+df_1 <- raw data of the isolates with Sequence_Name (original_ID & blast identity concatenated) and the ST assignment
+df_2 <- Split the Sequence_Name in df_1 into the Original ID, Genus and Species. Kept the Sequence_Name vector
+df_3 <- Split the Original_ID to get the Location, Sampling, Day, BiologicalRep, Test, TechnicalRep and IsolateNumber vectors. Kept the Original_ID vector. 
+df_4 <- Isolates from APC and GN tests. Created a new column: High_Frequency_Genus. Genera with less than 3 isolates among APC and GN isolates were labeled as "Rare"
+df_5 <- Isolates from APC, subset of df_4
+df_6 <- Isolates from GN,  subset of df_4
+df_7 <- Isolates from BHI, subset of df_2. 
+
+test_ct <- Contingency table of High_Frequency_Genus and Test using data from df_4 
+sampling_ct <- Contingency table of High_Frequency_Genus and Sampling using data from df_4 
+day_ct <- Contingency table of High_Frequency_Genus and Day using data from df_4 
+apc_sampling_ct <- Contingency table of High_Frequency_Genus and Sampling using data from df_5
+apc_day_ct <- Contingency table of High_Frequency_Genus and Day using data from df_5
+gn_sampling_ct <- Contingency table of High_Frequency_Genus and Sampling using data from df_6 
+gn_day_ct <- Contingency table of High_Frequency_Genus and Day using data from df_6 
+bhi_sampling_ct <- Contingency table of High_Frequency_Genus and Sampling using data from df_7
+bhi_day_ct <- Contingency table of High_Frequency_Genus and Day using data from df_7
+
+Analysis overview 
+Analysis for BHI and APC/GN data conducted separately due to difference in methodology for collecting and sequencing isolates. 
+APC/GN data:
+Assign any genera with less than three isolates as "Rare". 
+Test whether there is an association of genera by test. If so, analyze APC and GN data separately. If not, test all petrifilm data (APC and GN) together
+Conduct Fisher's exact tests to look for association of genera to: i) sampling, ii) day 
+
+BHI data:
+Assign any genera with less than three isolates as "Rare". 
+Conduct Fisher's exact tests to look for association of genera to: i) sampling, ii) day 
+
+Chunk Description: Parsing dataframes to aid in analysis. This chunk uses functions from the tidyr package (separate) and the dplyr package (mutate)
+Chunk conclusion: NA
+
+Key:
+sampling = lot, therefore S1=L1, S2=L2, S3=L3
+BJ refers to Beijing eCommerce distribution pathway, H/HD refers to local grocery distribution pathway
+```{r}
+df_1 <- read.csv("df_isolateInfo_051321.csv", header = TRUE)
+
+df_2 <- df_1 %>%
+  separate(isolateID, c("Location", "Sampling", "Day", "BiologicalRep", "Test", "TechnicalRep", "IsolateNumber"), sep = "-", extra = "merge", remove = FALSE)
+
+##Edit elements in dataframe to retain consistency.
+#df_3$Location, changed HD to H 
+
+df_2 <- df_2 %>%
+  mutate(Location = replace(Location, Location == "HD", "H"))
+
+#df_3$Day, changed DI to D3
+df_2 = df_2 %>%
+  mutate(Day = replace(Day, Day == "DI", "D3"))
+
+df_3 <- df_2 %>%
+  filter(Test != "BHI")
+
+isolates_summary_df_3 <- data.frame(table(df_3$genus_C))
+
+rare_isolates_df_3 <- isolates_summary_df_3 %>%
+  filter(Freq < 3) 
+
+df_4 <- df_3 %>%
+  mutate(High_Frequency_Genus =  replace(genus_C, genus_C %in% rare_isolates_df_3$Var1, "Rare"))
+
+df_5 <- df_4 %>%
+  filter(Test == "APC")
+
+df_6 <- df_4 %>%
+  filter(Test == "GN")
+
+df_7 <- df_2 %>%
+  filter(Test == "BHI")
+
+isolate_summary_df_7 <- data.frame(table(df_7$genus_C))
+
+rare_isolates_df_7 <- isolate_summary_df_7 %>%
+  filter(Freq < 3) 
+
+df_7 <- df_7 %>%
+  mutate(High_Frequency_Genus =  replace(genus_C, genus_C %in% rare_isolates_df_7$Var1, "Rare"))
+```
+
+Chunk Description: Conducting a chi-squared test of genera by test (APC and GN) (coarsest sub-division of the data). If expected values for more than 20% of the cells is greater than 5, we can use this test. This is only for isolates selected from APC and GN petrifilms 
+Conclusion:The expected values of >20% cells is less than 5 for sampling_ct (APC and GN data) and day_ct (APC and GN data). Hence, we cannot use the chi-squared test (this is when the APC and GN data were combined. When we analyze the APC and GN data separately, a greater proportion of the cells have expected values <5)
+```{r}
+test_ct <- table(df_4$High_Frequency_Genus, df_4$Test)
+test_chisq <- chisq.test(test_ct)
+test_chisq$expected
+
+sampling_ct <- table(df_4$High_Frequency_Genus, df_4$Sampling)
+sampling_chisq <- chisq.test(sampling_ct)
+sampling_chisq$expected
+
+day_ct <- table(df_4$High_Frequency_Genus, df_4$Day)
+day_chisq <- chisq.test(day_ct)
+day_chisq$expected
+```
+
+```{r}
+sink("Fishers_Exact_Test_Output.txt")
+
+print("Hypotheses:", quote = FALSE) 
+print("1. Populations differ significantly by test (APC, GN)", quote = FALSE)
+print("2. Populations differ significantly by sampling (S1, S2, S3)", quote = FALSE)
+print("3. Populations differ significantly by day of isolate collection (D0, D3, D10)", quote = FALSE)
+
+print("Aim: Use Fisher's exact test with the simulate.p.value function for tables larger than 2x2, to test for significant differences in isolate identity between: 1) test, 2) sampling, 3)day of testing/isolate collection", quote = FALSE)
+
+print("1) Test of significant difference between tests, for the contingency table below (Hypothesis 1):", quote = FALSE)
+
+print("Test_Contingency_Table", quote = FALSE)
+print(test_ct)
+
+print("Result of Fisher's Exact Test for Hypothesis 1:", quote= FALSE)
+fisher.test(test_ct, simulate.p.value = TRUE)
+
+print("Sampling_Contingency_Table", quote = FALSE)
+print(sampling_ct)
+
+print("Result of Fisher's Exact Test for Hypothesis 2:", quote= FALSE)
+fisher.test(sampling_ct, simulate.p.value = TRUE)
+
+print("Day_Contingency_Table", quote = FALSE)
+print(day_ct)
+
+print("Result of Fisher's Exact Test for Hypothesis 3:", quote= FALSE)
+fisher.test(day_ct, simulate.p.value = TRUE)
+sink()
+```
+
+```{r}
+apc_sampling_ct <- table(df_5$High_Frequency_Genus, df_5$Sampling)
+
+apc_day_ct <- table(df_5$High_Frequency_Genus, df_5$Day)
+
+gn_sampling_ct <- table(df_6$High_Frequency_Genus, df_6$Sampling)
+
+gn_day_ct <- table(df_6$High_Frequency_Genus, df_6$Day)
+
+```
+
+Fisher's exact test for APC data: association of genera for: i) lot, ii) day 
+```{r}
+sink("Fishers_Exact_Test_Output_APC_Only.txt")
+
+print("Test of significant difference between samplings, for the contingency table below (Hypothesis 1; APC data only):", quote = FALSE)
+
+print("Sampling_ContingencyTable_APC", quote = FALSE)
+print(apc_sampling_ct)
+
+print("Result of Fisher's Exact Test for Sampling_ContingencyTable_APC:", quote= FALSE)
+fisher.test(apc_sampling_ct, simulate.p.value = TRUE)
+
+print("Day_ContingencyTable_APC", quote = FALSE)
+print(apc_day_ct)
+
+print("Result of Fisher's Exact Test for Day_ContingencyTable_APC:", quote= FALSE)
+fisher.test(apc_day_ct, simulate.p.value = TRUE)
+
+sink()
+```
+
+
+Fisher's exact test for GN data: association of genera for: i) lot, ii) day 
+```{r}
+sink("Fishers_Exact_Test_Output_GN_Only.txt")
+
+print("Test of significant difference between samplings, for the contingency table below (Hypothesis 1; APC data only):", quote = FALSE)
+
+print("Sampling_ContingencyTable_GN", quote = FALSE)
+print(gn_sampling_ct)
+
+print("Result of Fisher's Exact Test for Sampling_ContingencyTable_GN:", quote= FALSE)
+fisher.test(gn_sampling_ct, simulate.p.value = TRUE)
+
+print("Day_ContingencyTable_GN", quote = FALSE)
+print(gn_day_ct)
+
+print("Result of Fisher's Exact Test for Day_ContingencyTable_GN:", quote= FALSE)
+fisher.test(gn_day_ct, simulate.p.value = TRUE)
+
+sink()
+```
+
+```{r}
+bhi_sampling_ct <- table(df_7$High_Frequency_Genus, df_7$Sampling)
+
+bhi_day_ct <- table(df_7$High_Frequency_Genus, df_7$Day)
+```
+
+Fisher's exact test for BHI data: association of genera for: i) lot, ii) day 
+```{r}
+sink("Fishers_Exact_Test_Output_BHI_Only.txt")
+
+print("Test of significant difference between samplings, for the contingency table below (Hypothesis 1; BHI data only):", quote = FALSE)
+
+print("Sampling_ContingencyTable_BHI", quote = FALSE)
+print(bhi_sampling_ct)
+
+print("Result of Fisher's Exact Test for Sampling_ContingencyTable_BHI:", quote= FALSE)
+fisher.test(bhi_sampling_ct, simulate.p.value = TRUE)
+
+print("Day_ContingencyTable_BHI", quote = FALSE)
+print(bhi_day_ct)
+
+print("Result of Fisher's Exact Test for Day_ContingencyTable_BHI:", quote= FALSE)
+fisher.test(bhi_day_ct, simulate.p.value = TRUE)
+
+sink()
+```
+
+
+
+
