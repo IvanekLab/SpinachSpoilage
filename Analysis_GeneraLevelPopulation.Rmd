@@ -61,7 +61,7 @@ Key:
 sampling = lot, therefore S1=L1, S2=L2, S3=L3
 BJ refers to Beijing eCommerce distribution pathway, H/HD refers to local grocery distribution pathway
 ```{r}
-df_1 <- read.csv("df_isolateInfo_051321.csv", header = TRUE)
+df_1 <- read.csv("Data/df_isolateInfo_051321.csv", header = TRUE)
 
 df_2 <- df_1 %>%
   separate(isolateID, c("Location", "Sampling", "Day", "BiologicalRep", "Test", "TechnicalRep", "IsolateNumber"), sep = "-", extra = "merge", remove = FALSE)
